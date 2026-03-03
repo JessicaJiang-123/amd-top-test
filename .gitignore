@@ -1,0 +1,7 @@
+step1_compare/*.log
+step1_compare/results
+set_deterministic_args/results
+set_deterministic_args/__pycache__
+attention_test/__pycache__
+attention_test/results
+step1_compare/__pycache__
