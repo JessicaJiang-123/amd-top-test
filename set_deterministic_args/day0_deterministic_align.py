@@ -431,6 +431,18 @@ def hf_get_logprobs(
             x = x.to(target_dtype)
         return (x,) + tuple(args[1:]), kwargs
 
+    def _capture_layer0_post_attn_residual(_module, args, kwargs):
+        x = kwargs.get("hidden_states", args[0] if len(args) > 0 else None)
+        if x is not None:
+            # Input to post_attention_layernorm is the residual branch used for the
+            # final block residual add after MLP.
+            _maybe_dump("layer0_residual", _hf_slice(x))
+
+    def _capture_layer0_attn_o_proj_input(_module, args, kwargs):
+        x = args[0] if len(args) > 0 else None
+        if x is not None:
+            _maybe_dump("layer0_attn_context_before_o_proj", _hf_slice(x))
+
     if hasattr(model, "model") and hasattr(model.model, "layers"):
         for layer in model.model.layers:
             for norm_name in ("input_layernorm", "post_attention_layernorm"):
@@ -502,10 +514,47 @@ def hf_get_logprobs(
             )
         )
 
+        if hasattr(first_layer.self_attn, "o_proj"):
+            hook_handles.append(
+                first_layer.self_attn.o_proj.register_forward_pre_hook(
+                    _capture_layer0_attn_o_proj_input, with_kwargs=True
+                )
+            )
+
+        if hasattr(first_layer, "post_attention_layernorm"):
+            hook_handles.append(
+                first_layer.post_attention_layernorm.register_forward_pre_hook(
+                    _capture_layer0_post_attn_residual, with_kwargs=True
+                )
+            )
+
+        if hasattr(first_layer, "mlp"):
+            def _capture_layer0_mlp_output(_module, args, kwargs, output):
+                try:
+                    mlp_out = output[0] if isinstance(output, tuple) else output
+                    if mlp_out is not None:
+                        _maybe_dump(
+                            "layer0_block_out_before_residual_add",
+                            _hf_slice(mlp_out.to(torch.bfloat16)),
+                        )
+                except Exception:
+                    pass
+
+            hook_handles.append(
+                first_layer.mlp.register_forward_hook(
+                    _capture_layer0_mlp_output, with_kwargs=True
+                )
+            )
+
         def _capture_layer0_block_output(_module, args, kwargs, output):
             try:
                 hidden_states = output[0] if isinstance(output, tuple) else output
                 if hidden_states is not None:
+                    # Decoder layer output is already after the final residual add.
+                    _maybe_dump(
+                        "layer0_block_out_after_residual_add",
+                        _hf_slice(hidden_states.to(torch.bfloat16)),
+                    )
                     _maybe_dump(
                         "layer0_block_out",
                         _hf_slice(hidden_states.to(torch.bfloat16)),
@@ -521,6 +570,69 @@ def hf_get_logprobs(
 
         # layer0_attn_input_after_prepare is captured inside _self_attn_pre_bf16
         # before bf16 cast, to match SGLang's semantic timing.
+
+        def _capture_layer0_attn_details(_module, args, kwargs, output):
+            try:
+                hidden_states = kwargs.get("hidden_states", args[0] if len(args) > 0 else None)
+                if hidden_states is None:
+                    return
+
+                if hasattr(_module, "q_proj") and hasattr(_module, "k_proj") and hasattr(_module, "v_proj"):
+                    q = _module.q_proj(hidden_states)
+                    k = _module.k_proj(hidden_states)
+                    v = _module.v_proj(hidden_states)
+                    _maybe_dump("layer0_q_pre_norm", _hf_slice(q))
+                    _maybe_dump("layer0_k_pre_norm", _hf_slice(k))
+                    _maybe_dump("layer0_v_pre_norm", _hf_slice(v))
+
+                    num_heads = getattr(_module, "num_heads", None)
+                    if num_heads is None and hasattr(_module, "config"):
+                        num_heads = getattr(_module.config, "num_attention_heads", None)
+
+                    num_kv_heads = getattr(_module, "num_key_value_heads", None)
+                    if num_kv_heads is None and hasattr(_module, "config"):
+                        num_kv_heads = getattr(_module.config, "num_key_value_heads", num_heads)
+
+                    qn, kn = q, k
+                    if (
+                        hasattr(_module, "q_norm")
+                        and hasattr(_module, "k_norm")
+                        and num_heads is not None
+                        and num_kv_heads is not None
+                    ):
+                        q_head_dim = q.shape[-1] // num_heads
+                        k_head_dim = k.shape[-1] // num_kv_heads
+                        qn = _module.q_norm(
+                            q.view(q.shape[0], q.shape[1], num_heads, q_head_dim)
+                        ).reshape_as(q)
+                        kn = _module.k_norm(
+                            k.view(k.shape[0], k.shape[1], num_kv_heads, k_head_dim)
+                        ).reshape_as(k)
+                        _maybe_dump("layer0_q_post_norm", _hf_slice(qn))
+                        _maybe_dump("layer0_k_post_norm", _hf_slice(kn))
+
+                        position_embeddings = kwargs.get("position_embeddings")
+                        if isinstance(position_embeddings, tuple) and len(position_embeddings) == 2:
+                            cos, sin = position_embeddings
+                            qn_heads = qn.view(
+                                q.shape[0], q.shape[1], num_heads, q_head_dim
+                            ).transpose(1, 2)
+                            kn_heads = kn.view(
+                                k.shape[0], k.shape[1], num_kv_heads, k_head_dim
+                            ).transpose(1, 2)
+                            qr, kr = apply_rotary_pos_emb(qn_heads, kn_heads, cos, sin)
+                            q_post_rope = qr.transpose(1, 2).reshape_as(q)
+                            k_post_rope = kr.transpose(1, 2).reshape_as(k)
+                            _maybe_dump("layer0_q_post_rope", _hf_slice(q_post_rope))
+                            _maybe_dump("layer0_k_post_rope", _hf_slice(k_post_rope))
+            except Exception:
+                pass
+
+        hook_handles.append(
+            first_layer.self_attn.register_forward_hook(
+                _capture_layer0_attn_details, with_kwargs=True
+            )
+        )
 
     if hasattr(model, "model") and hasattr(model.model, "layers") and len(model.model.layers) > 0:
         last_layer = model.model.layers[-1]

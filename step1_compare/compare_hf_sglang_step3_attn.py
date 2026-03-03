@@ -11,7 +11,18 @@ DEFAULT_SG_DIR = Path("/tmp/dumper/sglang_dump_1772518041.371588")
 
 DEFAULT_HF_INDEX = {
     "layer0_hidden_in": 6,
+    "layer0_q_pre_norm": -1,
+    "layer0_k_pre_norm": -1,
+    "layer0_v_pre_norm": -1,
+    "layer0_q_post_norm": -1,
+    "layer0_k_post_norm": -1,
+    "layer0_q_post_rope": -1,
+    "layer0_k_post_rope": -1,
+    "layer0_residual": -1,
+    "layer0_attn_context_before_o_proj": -1,
     "layer0_attn_out": 7,
+    "layer0_block_out_before_residual_add": -1,
+    "layer0_block_out_after_residual_add": -1,
     "layer0_block_out": 8,
     "input_ids_for_compare": 1,
     "embedding_output": 2,
@@ -38,8 +49,15 @@ DEFAULT_SG_INDEX = {
     "layer0_q_pre_norm": 65,
     "layer0_k_pre_norm": 66,
     "layer0_v_pre_norm": 67,
+    "layer0_q_post_norm": -1,
+    "layer0_k_post_norm": -1,
+    "layer0_q_post_rope": -1,
+    "layer0_k_post_rope": -1,
+    "layer0_residual": -1,
     "layer0_attn_context_before_o_proj": 68,
     "layer0_attn_out": 69,
+    "layer0_block_out_before_residual_add": -1,
+    "layer0_block_out_after_residual_add": -1,
     "layer0_block_out": 70,
     "input_ids_for_compare": 58,
     "embedding_output": 59,
@@ -80,7 +98,18 @@ ALL_COMPARE_NAMES = [
     "layer0_attn_after_input_layernorm_only",
     "layer0_attn_input_after_prepare",
     "layer0_hidden_in",
+    "layer0_q_pre_norm",
+    "layer0_k_pre_norm",
+    "layer0_v_pre_norm",
+    "layer0_q_post_norm",
+    "layer0_k_post_norm",
+    "layer0_q_post_rope",
+    "layer0_k_post_rope",
+    "layer0_residual",
+    "layer0_attn_context_before_o_proj",
     "layer0_attn_out",
+    "layer0_block_out_before_residual_add",
+    "layer0_block_out_after_residual_add",
     "layer0_block_out",
     "attn_input_last_layer",
     "q_pre_norm",
@@ -106,7 +135,18 @@ FOCUS_TO_NAMES = {
         "layer0_attn_after_input_layernorm_only",
         "layer0_attn_input_after_prepare",
         "layer0_hidden_in",
+        "layer0_q_pre_norm",
+        "layer0_k_pre_norm",
+        "layer0_v_pre_norm",
+        "layer0_q_post_norm",
+        "layer0_k_post_norm",
+        "layer0_q_post_rope",
+        "layer0_k_post_rope",
+        "layer0_residual",
+        "layer0_attn_context_before_o_proj",
         "layer0_attn_out",
+        "layer0_block_out_before_residual_add",
+        "layer0_block_out_after_residual_add",
         "layer0_block_out",
     ],
     "last_layer": [
@@ -129,6 +169,7 @@ SECTION_TITLES = {
     "input_ids_for_compare": "Inputs",
     "layer0_attn_input_raw": "Layer 0 Prepare",
     "layer0_hidden_in": "Layer 0 Attention",
+    "layer0_residual": "Layer 0 Residual / Block",
     "attn_input_last_layer": "Last Layer Attention",
     "final_hidden_before_lm_head": "LM Head",
 }
@@ -137,7 +178,18 @@ ALIGN_TO_SINGLE_STEP = True
 
 ALIGN_NAMES = {
     "layer0_hidden_in",
+    "layer0_q_pre_norm",
+    "layer0_k_pre_norm",
+    "layer0_v_pre_norm",
+    "layer0_q_post_norm",
+    "layer0_k_post_norm",
+    "layer0_q_post_rope",
+    "layer0_k_post_rope",
+    "layer0_residual",
+    "layer0_attn_context_before_o_proj",
     "layer0_attn_out",
+    "layer0_block_out_before_residual_add",
+    "layer0_block_out_after_residual_add",
     "layer0_block_out",
     "attn_input_last_layer",
     "q_pre_norm",
@@ -160,7 +212,18 @@ HF_DROP_LAST_TOKEN_NAMES = {
 
 SQUEEZE_BATCH1_NAMES = {
     "layer0_hidden_in",
+    "layer0_q_pre_norm",
+    "layer0_k_pre_norm",
+    "layer0_v_pre_norm",
+    "layer0_q_post_norm",
+    "layer0_k_post_norm",
+    "layer0_q_post_rope",
+    "layer0_k_post_rope",
+    "layer0_residual",
+    "layer0_attn_context_before_o_proj",
     "layer0_attn_out",
+    "layer0_block_out_before_residual_add",
+    "layer0_block_out_after_residual_add",
     "layer0_block_out",
     "input_ids_for_compare",
     "embedding_output",
@@ -322,6 +385,18 @@ def align_single_step(name: str, x: torch.Tensor) -> torch.Tensor:
     return x
 
 
+def describe_normalize_rule(name: str, x: torch.Tensor, side: str) -> str:
+    rules = []
+    if name in SQUEEZE_BATCH1_NAMES and x.ndim >= 1 and x.shape[0] == 1:
+        rules.append("squeeze batch dim 0")
+    if side == "hf" and name in HF_DROP_LAST_TOKEN_NAMES:
+        if x.ndim == 1 and x.shape[0] > 1:
+            rules.append("drop last token on dim 0")
+        elif x.ndim == 2 and x.shape[0] > 1:
+            rules.append("drop last token on dim 0")
+    return ", ".join(rules) if rules else "no normalize"
+
+
 def normalize_for_compare(name: str, x: torch.Tensor, side: str) -> torch.Tensor:
     if name in SQUEEZE_BATCH1_NAMES and x.ndim >= 1 and x.shape[0] == 1:
         x = x[0]
@@ -331,6 +406,16 @@ def normalize_for_compare(name: str, x: torch.Tensor, side: str) -> torch.Tensor
         elif x.ndim == 2 and x.shape[0] > 1:
             x = x[:-1, :]
     return x
+
+
+def describe_align_rule(name: str, x: torch.Tensor) -> str:
+    if not ALIGN_TO_SINGLE_STEP or name not in ALIGN_NAMES:
+        return "no single-step align"
+    if x.ndim == 3:
+        return f"take last token x[:, -1, :] from original seq_len={x.shape[1]}"
+    if x.ndim == 2 and x.shape[0] > 1:
+        return f"take last token x[-1:, :] from original seq_len={x.shape[0]}"
+    return "single-step align enabled but tensor already single-step"
 
 
 def compare(
@@ -362,11 +447,24 @@ def compare(
         logger.log(f"  -> SG file missing, skip: {e}")
         return
 
-    x_hf = normalize_for_compare(name, x_hf, side="hf")
-    x_sg = normalize_for_compare(name, x_sg, side="sg")
+    x_hf_raw = x_hf
+    x_sg_raw = x_sg
+    hf_normalize_rule = describe_normalize_rule(name, x_hf_raw, side="hf")
+    sg_normalize_rule = describe_normalize_rule(name, x_sg_raw, side="sg")
+
+    x_hf = normalize_for_compare(name, x_hf_raw, side="hf")
+    x_sg = normalize_for_compare(name, x_sg_raw, side="sg")
+
+    hf_align_rule = describe_align_rule(name, x_hf)
+    sg_align_rule = describe_align_rule(name, x_sg)
+
     x_hf = align_single_step(name, x_hf)
     x_sg = align_single_step(name, x_sg)
 
+    logger.log(f"  hf raw shape: {tuple(x_hf_raw.shape)}")
+    logger.log(f"  sg raw shape: {tuple(x_sg_raw.shape)}")
+    logger.log(f"  hf slice rule: normalize=({hf_normalize_rule}); align=({hf_align_rule}); final_shape={tuple(x_hf.shape)}")
+    logger.log(f"  sg slice rule: normalize=({sg_normalize_rule}); align=({sg_align_rule}); final_shape={tuple(x_sg.shape)}")
     logger.log(f"  hf shape/dtype: {tuple(x_hf.shape)} {x_hf.dtype}")
     logger.log(f"  sg shape/dtype: {tuple(x_sg.shape)} {x_sg.dtype}")
     logger.log(f"  shape_equal: {x_hf.shape == x_sg.shape}")
