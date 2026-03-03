@@ -374,6 +374,16 @@ def hf_get_logprobs(
             return output.float()
         return output
 
+    def _sglang_style_qk_rmsnorm_fp32(
+        x: torch.Tensor, weight: torch.Tensor, eps: float
+    ) -> torch.Tensor:
+        # Mimic SGLang RMSNorm.forward_native() for q/k norm alignment:
+        # compute in fp32 and keep the output in fp32.
+        x_fp32 = x.to(torch.float32)
+        variance = x_fp32.pow(2).mean(dim=-1, keepdim=True)
+        normed = x_fp32 * torch.rsqrt(variance + eps)
+        return weight.to(torch.float32) * normed
+
     def _self_attn_pre_bf16(_module, args, kwargs):
         hs = kwargs.get("hidden_states", args[0] if len(args) > 0 else None)
         if hs is None or not isinstance(hs, torch.Tensor):
@@ -602,11 +612,19 @@ def hf_get_logprobs(
                     ):
                         q_head_dim = q.shape[-1] // num_heads
                         k_head_dim = k.shape[-1] // num_kv_heads
-                        qn = _module.q_norm(
-                            q.view(q.shape[0], q.shape[1], num_heads, q_head_dim)
+                        q_4d = q.view(q.shape[0], q.shape[1], num_heads, q_head_dim)
+                        k_4d = k.view(
+                            k.shape[0], k.shape[1], num_kv_heads, k_head_dim
+                        )
+                        qn = _sglang_style_qk_rmsnorm_fp32(
+                            q_4d,
+                            _module.q_norm.weight,
+                            _module.q_norm.variance_epsilon,
                         ).reshape_as(q)
-                        kn = _module.k_norm(
-                            k.view(k.shape[0], k.shape[1], num_kv_heads, k_head_dim)
+                        kn = _sglang_style_qk_rmsnorm_fp32(
+                            k_4d,
+                            _module.k_norm.weight,
+                            _module.k_norm.variance_epsilon,
                         ).reshape_as(k)
                         _maybe_dump("layer0_q_post_norm", _hf_slice(qn))
                         _maybe_dump("layer0_k_post_norm", _hf_slice(kn))
@@ -667,11 +685,21 @@ def hf_get_logprobs(
                             if num_heads is not None and num_kv_heads is not None:
                                 q_head_dim = q.shape[-1] // num_heads
                                 k_head_dim = k.shape[-1] // num_kv_heads
-                                qn = _module.q_norm(
-                                    q.view(q.shape[0], q.shape[1], num_heads, q_head_dim)
+                                q_4d = q.view(
+                                    q.shape[0], q.shape[1], num_heads, q_head_dim
+                                )
+                                k_4d = k.view(
+                                    k.shape[0], k.shape[1], num_kv_heads, k_head_dim
+                                )
+                                qn = _sglang_style_qk_rmsnorm_fp32(
+                                    q_4d,
+                                    _module.q_norm.weight,
+                                    _module.q_norm.variance_epsilon,
                                 ).reshape_as(q)
-                                kn = _module.k_norm(
-                                    k.view(k.shape[0], k.shape[1], num_kv_heads, k_head_dim)
+                                kn = _sglang_style_qk_rmsnorm_fp32(
+                                    k_4d,
+                                    _module.k_norm.weight,
+                                    _module.k_norm.variance_epsilon,
                                 ).reshape_as(k)
                                 _maybe_dump("q_post_norm", _hf_slice(qn))
                                 _maybe_dump("k_post_norm", _hf_slice(kn))
