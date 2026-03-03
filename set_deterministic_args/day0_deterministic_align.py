@@ -322,6 +322,7 @@ def hf_get_logprobs(
         enable_batch_invariant_mode_with_tracing()
 
     from transformers import AttentionInterface, AutoModelForCausalLM
+    from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
 
     if attn_implementation == "triton":
         attention_dir = Path(__file__).resolve().parent.parent / "attention_test"
@@ -544,14 +545,42 @@ def hf_get_logprobs(
                         qn, kn = q, k
                         if hasattr(_module, "q_norm") and hasattr(_module, "k_norm"):
                             num_heads = getattr(_module, "num_heads", None)
-                            num_kv_heads = getattr(_module, "num_key_value_heads", num_heads)
+                            if num_heads is None and hasattr(_module, "config"):
+                                num_heads = getattr(_module.config, "num_attention_heads", None)
+
+                            num_kv_heads = getattr(_module, "num_key_value_heads", None)
+                            if num_kv_heads is None and hasattr(_module, "config"):
+                                num_kv_heads = getattr(_module.config, "num_key_value_heads", num_heads)
+
                             if num_heads is not None and num_kv_heads is not None:
                                 q_head_dim = q.shape[-1] // num_heads
                                 k_head_dim = k.shape[-1] // num_kv_heads
-                                qn = _module.q_norm(q.view(q.shape[0], q.shape[1], num_heads, q_head_dim)).reshape_as(q)
-                                kn = _module.k_norm(k.view(k.shape[0], k.shape[1], num_kv_heads, k_head_dim)).reshape_as(k)
+                                qn = _module.q_norm(
+                                    q.view(q.shape[0], q.shape[1], num_heads, q_head_dim)
+                                ).reshape_as(q)
+                                kn = _module.k_norm(
+                                    k.view(k.shape[0], k.shape[1], num_kv_heads, k_head_dim)
+                                ).reshape_as(k)
                                 _maybe_dump("q_post_norm", _hf_slice(qn))
                                 _maybe_dump("k_post_norm", _hf_slice(kn))
+
+                                position_embeddings = kwargs.get("position_embeddings")
+                                if (
+                                    isinstance(position_embeddings, tuple)
+                                    and len(position_embeddings) == 2
+                                ):
+                                    cos, sin = position_embeddings
+                                    qn_heads = qn.view(
+                                        q.shape[0], q.shape[1], num_heads, q_head_dim
+                                    ).transpose(1, 2)
+                                    kn_heads = kn.view(
+                                        k.shape[0], k.shape[1], num_kv_heads, k_head_dim
+                                    ).transpose(1, 2)
+                                    qr, kr = apply_rotary_pos_emb(qn_heads, kn_heads, cos, sin)
+                                    q_post_rope = qr.transpose(1, 2).reshape_as(q)
+                                    k_post_rope = kr.transpose(1, 2).reshape_as(k)
+                                    _maybe_dump("q_post_rope", _hf_slice(q_post_rope))
+                                    _maybe_dump("k_post_rope", _hf_slice(k_post_rope))
 
                     if attn_out_last_layer is not None:
                         _maybe_dump("attn_context_before_o_proj", _hf_slice(attn_out_last_layer))
@@ -614,7 +643,7 @@ def main() -> None:
 
     if args.manifest_json is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.manifest_json = f"results/day0_manifest_{ts}.json"
+        args.manifest_json = f"results/manifest_{ts}.json"
     save_manifest(args.manifest_json, args, prompt_ids)
 
     if args.load_rollout is not None:
@@ -695,7 +724,7 @@ def main() -> None:
 
     if args.output_json is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output_json = f"results/day0_compare_{ts}.json"
+        args.output_json = f"results/compare_{ts}.json"
     save_json(args.output_json, result)
 
     if args.save_detail is None:

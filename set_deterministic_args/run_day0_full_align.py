@@ -341,7 +341,12 @@ def build_server_cmd(args: argparse.Namespace) -> list[str]:
     ]
 
 
-def build_day0_cmd(args: argparse.Namespace) -> list[str]:
+def build_day0_cmd(
+    args: argparse.Namespace,
+    day0_manifest_json: Path,
+    day0_compare_json: Path,
+    day0_compare_detail_txt: Path,
+) -> list[str]:
     cmd = [
         sys.executable,
         "/app/true_on_policy/experiment/set_deterministic_args/day0_deterministic_align.py",
@@ -363,6 +368,12 @@ def build_day0_cmd(args: argparse.Namespace) -> list[str]:
         str(args.top_p),
         "--max-new-tokens",
         str(args.max_new_tokens),
+        "--manifest-json",
+        str(day0_manifest_json),
+        "--output-json",
+        str(day0_compare_json),
+        "--save-detail",
+        str(day0_compare_detail_txt),
     ]
     if args.strict_bitwise:
         cmd.append("--strict-bitwise")
@@ -404,6 +415,9 @@ def main() -> None:
     day0_log = run_dir / "day0_stdout.txt"
     compare_log = run_dir / "compare_stdout.txt"
     commands_txt = run_dir / "commands.txt"
+    day0_manifest_json = run_dir / "manifest.json"
+    day0_compare_json = run_dir / "compare.json"
+    day0_compare_detail_txt = run_dir / "compare_detail.txt"
     hf_dir_txt = run_dir / "hf_dir.txt"
     sg_dir_txt = run_dir / "sg_dir.txt"
     hf_index_json = run_dir / "hf_index.json"
@@ -411,7 +425,12 @@ def main() -> None:
     manifest_json = run_dir / "run_manifest.json"
 
     server_cmd = build_server_cmd(args)
-    day0_cmd = build_day0_cmd(args)
+    day0_cmd = build_day0_cmd(
+        args,
+        day0_manifest_json,
+        day0_compare_json,
+        day0_compare_detail_txt,
+    )
 
     write_text(
         commands_txt,
@@ -537,6 +556,9 @@ def main() -> None:
             "server_log": str(server_log),
             "day0_log": str(day0_log),
             "compare_log": str(compare_log),
+            "day0_manifest_json": str(day0_manifest_json),
+            "day0_compare_json": str(day0_compare_json),
+            "day0_compare_detail_txt": str(day0_compare_detail_txt),
             "hf_dir": str(hf_dir) if hf_dir is not None else None,
             "sg_dir": str(sg_dir) if sg_dir is not None else None,
             "hf_index_json": str(hf_index_json),
@@ -553,6 +575,9 @@ def main() -> None:
     print(f"day0_log: {day0_log}")
     print(f"compare_log: {compare_log}")
     print(f"commands_txt: {commands_txt}")
+    print(f"day0_manifest_json: {day0_manifest_json}")
+    print(f"day0_compare_json: {day0_compare_json}")
+    print(f"day0_compare_detail_txt: {day0_compare_detail_txt}")
     print(f"hf_dir: {hf_dir}")
     print(f"sg_dir: {sg_dir}")
     print(f"hf_index_json: {hf_index_json}")

@@ -125,6 +125,14 @@ FOCUS_TO_NAMES = {
     ],
 }
 
+SECTION_TITLES = {
+    "input_ids_for_compare": "Inputs",
+    "layer0_attn_input_raw": "Layer 0 Prepare",
+    "layer0_hidden_in": "Layer 0 Attention",
+    "attn_input_last_layer": "Last Layer Attention",
+    "final_hidden_before_lm_head": "LM Head",
+}
+
 ALIGN_TO_SINGLE_STEP = True
 
 ALIGN_NAMES = {
@@ -411,6 +419,9 @@ def main() -> None:
     logger.log(f"FOCUS = {args.focus}")
 
     for name in compare_names:
+        title = SECTION_TITLES.get(name)
+        if title is not None:
+            logger.log(f"\n== {title} ==")
         compare(logger, name, args.hf_dir, args.sg_dir, hf_index, sg_index)
 
     logger.flush_to(args.output_txt)
