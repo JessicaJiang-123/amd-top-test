@@ -27,8 +27,8 @@ import collections
 import torch
 
 # ===== Update these per run =====
-SG_DIR = Path("/tmp/my_dumps/sglang_dump_1772775991.6409755")   # SGLang inference
-TR_DIR = Path("/tmp/my_dumps/sglang_dump_1772776018.0248804")   # FSDP training
+SG_DIR = Path("/tmp/my_dumps/sglang_dump_1772776417.2578785")   # SGLang inference
+TR_DIR = Path("/tmp/my_dumps/sglang_dump_1772776417.2578785")   # FSDP training
 
 DIFF_THRESHOLD = 1e-3
 
@@ -42,6 +42,7 @@ LOGPROB_NAMES = {
 ATTN_INTERMEDIATE_NAMES = {
     "layer0_q_pre_norm", "layer0_k_pre_norm", "layer0_v_pre_norm",
     "layer0_q_post_norm", "layer0_k_post_norm",
+    "layer0_rope_cos", "layer0_rope_sin",
     "layer0_q_post_rope", "layer0_k_post_rope",
     "layer0_attn_context_before_o_proj", "layer0_attn_out_after_o_proj",
     "q_pre_norm", "k_pre_norm", "v_pre_norm",
