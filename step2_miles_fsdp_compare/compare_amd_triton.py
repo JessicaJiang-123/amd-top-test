@@ -27,8 +27,8 @@ import collections
 import torch
 
 # ===== Update these per run =====
-SG_DIR = Path("/tmp/my_dumps/sglang_dump_1772735058.4545045")   # SGLang inference
-TR_DIR = Path("/tmp/my_dumps/sglang_dump_1772735080.550444")   # FSDP training
+SG_DIR = Path("/tmp/my_dumps/sglang_dump_1772775991.6409755")   # SGLang inference
+TR_DIR = Path("/tmp/my_dumps/sglang_dump_1772776018.0248804")   # FSDP training
 
 DIFF_THRESHOLD = 1e-3
 
